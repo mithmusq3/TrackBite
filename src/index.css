@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html.dark {
+    color-scheme: dark;
+  }
+  
+  /* Prevent horizontal document overflow on mobile viewports */
+  html, body {
+    overflow-x: hidden;
+    touch-action: manipulation;
+  }
+}
+
+/* Hide scrollbar for mobile carousels and tabs */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
