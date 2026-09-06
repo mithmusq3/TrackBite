@@ -96,14 +96,6 @@ export interface DailyNutrientGoals {
   ironTarget?: number;
 }
 
-export interface SupabaseConfig {
-  url: string;
-  anonKey: string;
-  connected: boolean;
-  autoSync: boolean;
-  lastSyncedAt?: string;
-  errorMessage?: string;
-}
 
 export interface UserPersonalToleranceContext {
   subtype: 'IBS-D' | 'IBS-C' | 'IBS-M' | 'IBS-U' | 'Unspecified';

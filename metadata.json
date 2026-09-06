@@ -1,7 +1,9 @@
 {
   "name": "TrackMyPlate",
   "description": "Multimodal food nutrition analyzer, live multi-user cloud database & Supabase PostgreSQL logger, interactive range diagnostics, and clinical gut health risk engine.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "camera"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

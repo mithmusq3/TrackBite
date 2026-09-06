@@ -455,17 +455,6 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               content={`Plots daily Macro and Micro nutrient intake against clinical reference corridors (${isCustomGoalsActive ? 'Custom User Targets' : 'Clinical Default Ranges'}), tracks cumulative FODMAP load accumulation, and analyzes fiber tolerance patterns over your selected time period.`}
             />
           </div>
-          <div className="flex items-center space-x-2 mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            <span>Account:</span>
-            <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-              {currentUser.displayName || currentUser.email}
-            </span>
-            <span className="text-zinc-300 dark:text-zinc-600">•</span>
-            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center font-medium">
-              <CheckCircle className="w-3 h-3 mr-1 text-emerald-500" />
-              Private Account Data
-            </span>
-          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full lg:w-auto">

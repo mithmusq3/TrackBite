@@ -12,14 +12,12 @@ import { MultimodalFoodAnalyzer } from './components/MultimodalFoodAnalyzer';
 import { DualSheetsLogView } from './components/DualSheetsLogView';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
 import { NotebookGroundingModal } from './components/NotebookGroundingModal';
-import { SupabaseModal } from './components/SupabaseModal';
 import {
   NutritionLogEntry,
   GutHealthLogEntry,
   FoodAnalysisResponse,
   NotebookGroundingRule,
   UserPersonalToleranceContext,
-  SupabaseConfig,
 } from './types';
 import {
   DEFAULT_GROUNDING_RULES,
@@ -28,17 +26,11 @@ import {
 import { initAuth } from './lib/googleAuth';
 import {
   syncUserProfile,
-  seedUserLogsIfEmpty,
   subscribeToUserLogs,
   saveMealToDatabase,
   updateMealInDatabase,
   deleteMealFromDatabase,
 } from './lib/databaseService';
-import {
-  getInitialSupabaseConfig,
-  syncMealToSupabase,
-  deleteMealFromSupabase,
-} from './lib/supabaseClient';
 
 export default function App() {
   const [activeView, setActiveView] = useState<'analyzer' | 'logs' | 'analytics'>('analyzer');
@@ -83,14 +75,8 @@ export default function App() {
     return saved ? JSON.parse(saved) : DEFAULT_TOLERANCE_CONTEXT;
   });
 
-  // Supabase PostgreSQL integration state
-  const [supabaseConfig, setSupabaseConfig] = useState<SupabaseConfig>(() => {
-    return getInitialSupabaseConfig();
-  });
-
   // Modal open states
   const [isNotebookModalOpen, setIsNotebookModalOpen] = useState(false);
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
 
   // Initialize Firebase Auth listener on mount
@@ -129,10 +115,7 @@ export default function App() {
     let isMounted = true;
     const userId = currentUser.uid;
 
-    // Seed database with starter plate history if user is logging in for the first time
-    seedUserLogsIfEmpty(userId);
-
-    // Live subscription to Firestore scoped strictly to request.auth.uid == userId
+    // Live subscription to PostgreSQL via Backend API
     const unsubscribe = subscribeToUserLogs(
       userId,
       (nutrition, gutHealth) => {
@@ -214,38 +197,14 @@ export default function App() {
     setNutritionLogs(updatedNutrition);
     setGutHealthLogs(updatedGut);
 
-    // Save to Firestore Database strictly for this authenticated user
+    // Save to Database strictly for this authenticated user
     try {
       await saveMealToDatabase(nutrition, gutHealth, currentUser.uid);
+      showToast(`Logged "${nutrition.meal}"`);
     } catch (dbErr) {
-      console.warn('Firestore database save warning:', dbErr);
+      console.warn('Database save warning:', dbErr);
+      showToast(`Error logging "${nutrition.meal}".`);
     }
-
-    // Persist to local server store backup
-    try {
-      await fetch('/api/logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nutrition, gutHealth }),
-      });
-    } catch (err) {
-      console.error('Failed to persist log to server backup:', err);
-    }
-
-    // If Supabase PostgreSQL is connected with autoSync enabled, push live to database!
-    if (supabaseConfig.connected && supabaseConfig.autoSync) {
-      try {
-        const synced = await syncMealToSupabase(nutrition, gutHealth, supabaseConfig);
-        if (synced) {
-          showToast(`Logged "${nutrition.meal}" to Supabase PostgreSQL & private database.`);
-          return;
-        }
-      } catch (sbErr) {
-        console.warn('Live Supabase sync error:', sbErr);
-      }
-    }
-
-    showToast(`Logged "${nutrition.meal}" to your private database.`);
   };
 
   // Delete log entry
@@ -257,26 +216,12 @@ export default function App() {
       prev.filter((g) => g.id !== id && g.mealReferenceId !== id)
     );
 
-    // Delete from Firestore Database
+    // Delete from Database
     try {
       await deleteMealFromDatabase(id, currentUser.uid);
+      showToast('Record removed.');
     } catch (dbErr) {
-      console.warn('Firestore delete warning:', dbErr);
-    }
-
-    // Delete from Supabase PostgreSQL if connected
-    if (supabaseConfig.connected) {
-      deleteMealFromSupabase(id, supabaseConfig).catch((err) =>
-        console.warn('Failed to delete meal from Supabase:', err)
-      );
-    }
-
-    // Backup delete on server
-    try {
-      await fetch(`/api/logs/${id}`, { method: 'DELETE' });
-      showToast('Record removed from private database.');
-    } catch (err) {
-      console.error('Failed to delete on server backup:', err);
+      console.warn('Delete warning:', dbErr);
     }
   };
 
@@ -300,18 +245,11 @@ export default function App() {
       );
     }
 
-    // Update in Firestore Database
+    // Update in Database
     try {
       await updateMealInDatabase(updatedNutrition, updatedGutHealth, currentUser.uid);
     } catch (dbErr) {
-      console.warn('Firestore update warning:', dbErr);
-    }
-
-    // Update in Supabase PostgreSQL if connected
-    if (supabaseConfig.connected && updatedGutHealth) {
-      syncMealToSupabase(updatedNutrition, updatedGutHealth, supabaseConfig).catch((err) =>
-        console.warn('Failed to update meal on Supabase:', err)
-      );
+      console.warn('Database update warning:', dbErr);
     }
 
     // Backup update on server
@@ -342,10 +280,8 @@ export default function App() {
 
       {/* Main Header */}
       <Header
-        supabaseConfig={supabaseConfig}
         userContext={userContext}
         onOpenNotebookGrounding={() => setIsNotebookModalOpen(true)}
-        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         totalLogs={nutritionLogs.length}
         currentUser={currentUser}
         onAuthChange={handleAuthChange}
@@ -422,6 +358,7 @@ export default function App() {
             groundingRules={groundingRules}
             userContext={userContext}
             onOpenNotebookModal={() => setIsNotebookModalOpen(true)}
+            currentUser={currentUser}
           />
         </div>
 
@@ -456,10 +393,8 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-zinc-500 dark:text-zinc-400 gap-3">
           <div className="flex items-center space-x-2">
             <span className="font-semibold text-zinc-700 dark:text-zinc-300">
-              TrackMyPlate Engine
+              TrackMyPlate
             </span>
-            <span className="text-zinc-300 dark:text-zinc-600">•</span>
-            <span>Clinical Grounding (Mayer 2023, Holtmann 2016, StatPearls 2026)</span>
           </div>
           <div className="flex flex-wrap items-center gap-3 sm:gap-4">
             <button
@@ -467,19 +402,8 @@ export default function App() {
               onClick={() => setIsNotebookModalOpen(true)}
               className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white font-medium transition-colors"
             >
-              Grounding Rules ({groundingRules.filter((r) => r.enabled).length} active)
+              Grounding Rules
             </button>
-            <button
-              id="footer-supabase-btn"
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className="text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-300 font-medium transition-colors"
-            >
-              Supabase PostgreSQL
-            </button>
-            <div className="flex items-center space-x-1.5 text-zinc-500">
-              <Database className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Private Live DB Active</span>
-            </div>
           </div>
         </div>
       </footer>
@@ -492,20 +416,6 @@ export default function App() {
         onUpdateRules={handleUpdateRules}
         userContext={userContext}
         onUpdateUserContext={handleUpdateUserContext}
-      />
-
-      <SupabaseModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-        config={supabaseConfig}
-        onUpdateConfig={setSupabaseConfig}
-        nutritionLogs={nutritionLogs}
-        gutHealthLogs={gutHealthLogs}
-        onImportLogsFromSupabase={(importedNutrition, importedGut) => {
-          setNutritionLogs(importedNutrition);
-          setGutHealthLogs(importedGut);
-          showToast(`Imported ${importedNutrition.length} meals from Supabase PostgreSQL!`);
-        }}
       />
     </div>
   );

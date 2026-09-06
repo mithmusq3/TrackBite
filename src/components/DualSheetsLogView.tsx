@@ -175,25 +175,10 @@ export const DualSheetsLogView: React.FC<DualSheetsLogViewProps> = ({
             <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
               Database Worksheets
             </h2>
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
-              Live DB
-            </span>
             <InfoButton
               title="Database Worksheets"
-              content="Directly queries and displays live Firestore database logs for your authenticated Google account. Edits, additions, and deletions persist across sessions in real time."
+              content="Directly queries and displays live database logs for your authenticated account. Edits, additions, and deletions persist across sessions."
             />
-          </div>
-          <div className="flex items-center space-x-2 mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            <span>Account:</span>
-            <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-              {currentUser.displayName || currentUser.email}
-            </span>
-            <span className="text-zinc-300 dark:text-zinc-600">•</span>
-            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center font-medium">
-              <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-500" />
-              Private to this account
-            </span>
           </div>
         </div>
 

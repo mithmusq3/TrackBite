@@ -20,12 +20,15 @@ import {
 import { FoodAnalysisResponse, NotebookGroundingRule, UserPersonalToleranceContext, NutritionLogEntry, GutHealthLogEntry } from '../types';
 import { EditLogModal } from './EditLogModal';
 import { InfoButton } from './InfoButton';
+import { User } from 'firebase/auth';
+import { CameraCaptureModal } from './CameraCaptureModal';
 
 interface MultimodalFoodAnalyzerProps {
   onAddLog: (response: FoodAnalysisResponse) => void;
   groundingRules: NotebookGroundingRule[];
   userContext: UserPersonalToleranceContext;
   onOpenNotebookModal: () => void;
+  currentUser: User | null;
 }
 
 export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
@@ -33,6 +36,7 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
   groundingRules,
   userContext,
   onOpenNotebookModal,
+  currentUser,
 }) => {
   const [textInput, setTextInput] = useState(() => {
     try {
@@ -62,6 +66,7 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
       return 'image/jpeg';
     }
   });
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState<string>('');
   const [analysisResult, setAnalysisResult] = useState<FoodAnalysisResponse | null>(() => {
@@ -89,7 +94,19 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
     }
   });
 
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [showMobileOptions, setShowMobileOptions] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobileDevice(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth < 640);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Sync state to sessionStorage so results persist across browser reloads or tab switches
   useEffect(() => {
@@ -295,22 +312,13 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
       <div className="px-5 py-4 sm:px-6 border-b border-zinc-200/80 dark:border-zinc-800">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <div className="flex items-center space-x-2 mb-1">
-              <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                Multimodal Input
-              </span>
-              <span className="text-zinc-300 dark:text-zinc-700">•</span>
-              <span className="text-[11px] text-zinc-600 dark:text-zinc-300 font-medium">
-                Grounded to {userContext.subtype} Profile
-              </span>
-            </div>
             <div className="flex items-center space-x-2">
               <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
                 Analyze Meal & Clinical IBS Impact
               </h2>
               <InfoButton
-                title="Multimodal Meal Analysis"
-                content="Upload a plate photo or describe your meal. Gemini extracts nutritional facts, estimates portions, and evaluates FODMAP triggers grounded against your clinical tolerance profile."
+                title="Meal Analysis"
+                content="Upload a plate photo or describe your meal. The AI extracts nutritional facts, estimates portions, and evaluates FODMAP triggers grounded against your clinical tolerance profile."
               />
             </div>
           </div>
@@ -321,7 +329,7 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
             className="self-start sm:self-auto text-xs text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 rounded-lg font-medium flex items-center transition-colors shrink-0"
           >
             <Sparkles className="w-3.5 h-3.5 mr-1.5 text-zinc-500 dark:text-zinc-400" />
-            Grounding Rules ({groundingRules.filter((r) => r.enabled).length} active)
+            Grounding Rules
           </button>
         </div>
       </div>
@@ -342,18 +350,24 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
                   alt="Meal Preview"
                   className="w-full h-full object-cover"
                 />
-                <div className="absolute inset-0 bg-black/50 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-2 p-2">
+                <div className="absolute inset-0 bg-black/50 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2">
                   <button
                     onClick={handleClearImage}
-                    className="px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors shadow-2xs min-h-[36px]"
+                    className="px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors shadow-2xs min-h-[36px] w-32"
                   >
                     Remove Photo
                   </button>
                   <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-2 rounded-lg bg-white text-zinc-800 text-xs font-semibold hover:bg-zinc-100 transition-colors shadow-2xs min-h-[36px]"
+                    onClick={() => setIsCameraOpen(true)}
+                    className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors shadow-2xs min-h-[36px] w-32 flex justify-center items-center"
                   >
-                    Change
+                    <Camera className="w-4 h-4 mr-1.5" /> Retake
+                  </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-3 py-2 rounded-lg bg-white text-zinc-800 text-xs font-semibold hover:bg-zinc-100 transition-colors shadow-2xs min-h-[36px] w-32 flex justify-center items-center"
+                  >
+                    <Upload className="w-4 h-4 mr-1.5" /> Upload File
                   </button>
                 </div>
                 <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/75 text-white text-[11px] font-medium flex items-center pointer-events-none">
@@ -361,22 +375,22 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex flex-col justify-center">
-                <div
-                  id="photo-upload-dropzone"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 rounded-lg p-4 sm:p-5 text-center cursor-pointer transition-colors bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex flex-col items-center justify-center min-h-[130px]"
+              <div className="flex-1 flex flex-col justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => isMobileDevice ? setShowMobileOptions(true) : fileInputRef.current?.click()}
+                  className="border border-dashed border-zinc-300 dark:border-zinc-700 hover:border-zinc-400 dark:hover:border-zinc-600 rounded-lg p-5 text-center cursor-pointer transition-colors bg-zinc-50/50 dark:bg-zinc-800/40 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex flex-col items-center justify-center min-h-[130px] w-full"
                 >
                   <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex items-center justify-center mb-2">
-                    <Camera className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                    {isMobileDevice ? <Camera className="w-5 h-5" /> : <Upload className="w-5 h-5" />}
                   </div>
                   <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                    Snap photo or upload plate
+                    {isMobileDevice ? 'Snap photo or upload plate' : 'Upload food photo'}
                   </p>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Tap to use camera or select image
+                    {isMobileDevice ? 'Tap to choose' : 'Choose from files'}
                   </p>
-                </div>
+                </button>
               </div>
             )}
 
@@ -386,6 +400,17 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
               onChange={handleFileChange}
               accept="image/*"
               className="hidden"
+            />
+            
+            <CameraCaptureModal
+              isOpen={isCameraOpen}
+              onClose={() => setIsCameraOpen(false)}
+              onCapture={(dataUrl) => {
+                setImagePreview(dataUrl);
+                // Extract MIME type from dataUrl (e.g. "data:image/jpeg;base64,...")
+                const mime = dataUrl.split(';')[0].split(':')[1];
+                setImageMimeType(mime);
+              }}
             />
           </div>
 
@@ -425,8 +450,7 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
             </div>
 
             <div className="text-[11px] text-zinc-500 dark:text-zinc-400 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-              <span>Enter ingredients and portions for precise macro parsing.</span>
-              <span className="text-emerald-700 dark:text-emerald-400 font-medium">Gemini 3.8 Flash Multimodal</span>
+              <span>Enter ingredients and portions for precise parsing.</span>
             </div>
           </div>
         </div>
@@ -458,23 +482,23 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
         )}
 
         {/* Action Button & Disclaimer */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-          <div className="text-[11px] text-zinc-400 flex items-center">
-            <Info className="w-3.5 h-3.5 mr-1 text-zinc-400 shrink-0" />
-            Structured JSON output • Dual worksheets compliant
-          </div>
-
+        <div className="flex flex-col sm:flex-row items-center justify-end gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
           <button
             id="run-analysis-btn"
             onClick={handleAnalyze}
-            disabled={isAnalyzing || (!textInput.trim() && !imagePreview)}
+            disabled={!currentUser || isAnalyzing || (!textInput.trim() && !imagePreview)}
             className={`w-full sm:w-auto px-5 py-2.5 rounded-lg font-semibold text-xs flex items-center justify-center space-x-2 transition-all ${
-              isAnalyzing || (!textInput.trim() && !imagePreview)
+              !currentUser || isAnalyzing || (!textInput.trim() && !imagePreview)
                 ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed border border-zinc-200 dark:border-zinc-700'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
             }`}
           >
-            {isAnalyzing ? (
+            {!currentUser ? (
+              <>
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Sign in to Analyze Meal</span>
+              </>
+            ) : isAnalyzing ? (
               <>
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                 <span>Parsing with Gemini...</span>
@@ -789,6 +813,52 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
           gutHealthEntry={analysisResult.gutHealth}
           onSave={handleSaveModalEdits}
         />
+      )}
+
+      {/* Mobile Options Modal */}
+      {showMobileOptions && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 w-full max-w-sm rounded-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom-4">
+            <div className="p-4 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">Add Food Photo</h3>
+              <button onClick={() => setShowMobileOptions(false)} className="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-2 flex flex-col">
+              <button
+                onClick={() => {
+                  setShowMobileOptions(false);
+                  setIsCameraOpen(true);
+                }}
+                className="flex items-center space-x-3 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">Take a Photo</div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">Use your device camera</div>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setShowMobileOptions(false);
+                  fileInputRef.current?.click();
+                }}
+                className="flex items-center space-x-3 p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 rounded-xl transition-colors text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 flex items-center justify-center shrink-0">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">Upload from Files</div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">Choose an existing image</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

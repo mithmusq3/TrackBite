@@ -1,54 +1,22 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
-import fs from 'fs';
 import { GoogleGenAI, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_NUTRITION_LOGS, INITIAL_GUT_HEALTH_LOGS } from './src/data/seedLogs';
+import { createClient } from '@supabase/supabase-js';
 import { constructIbsSystemInstruction } from './src/lib/clinicalKnowledgeBase';
 import { NutritionLogEntry, GutHealthLogEntry } from './src/types';
 
+import 'dotenv/config';
+
 const PORT = 3000;
-const DATA_DIR = path.join(process.cwd(), 'data');
-const DATA_FILE = path.join(DATA_DIR, 'logs.json');
 
-// Initialize data directory and persistent file
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+// Initialize Supabase Client
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
-interface StoredData {
-  nutrition: NutritionLogEntry[];
-  gutHealth: GutHealthLogEntry[];
-}
-
-function loadStoredData(): StoredData {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const content = fs.readFileSync(DATA_FILE, 'utf-8');
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed.nutrition) && Array.isArray(parsed.gutHealth)) {
-        return parsed;
-      }
-    }
-  } catch (err) {
-    console.error('Error reading logs.json, falling back to seed data:', err);
-  }
-  return {
-    nutrition: [...INITIAL_NUTRITION_LOGS],
-    gutHealth: [...INITIAL_GUT_HEALTH_LOGS],
-  };
-}
-
-function saveStoredData(data: StoredData) {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('Error persisting logs to file:', err);
-  }
-}
-
-// In-memory working copy
-let db: StoredData = loadStoredData();
+const supabase = supabaseUrl && supabaseKey 
+  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } }) 
+  : null;
 
 // Lazy Gemini client helper
 let aiClient: GoogleGenAI | null = null;
@@ -153,47 +121,135 @@ async function startServer() {
     });
   });
 
-  // 2. GET logs (with optional userId filter)
-  app.get('/api/logs', (req: Request, res: Response) => {
+  // 2. GET logs (from Supabase PostgreSQL)
+  app.get('/api/logs', async (req: Request, res: Response) => {
+    if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
     const userId = req.query.userId as string | undefined;
-    if (userId) {
-      const filteredNutrition = db.nutrition.filter((n) => !n.userId || n.userId === userId);
-      const filteredGutHealth = db.gutHealth.filter((g) => !g.userId || g.userId === userId);
-      return res.json({
-        nutrition: filteredNutrition,
-        gutHealth: filteredGutHealth,
-      });
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
     }
-    res.json({
-      nutrition: db.nutrition,
-      gutHealth: db.gutHealth,
-    });
+
+    try {
+      const { data: nutData, error: nutErr } = await supabase
+        .from('nutrition_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('timestamp', { ascending: false });
+
+      if (nutErr) throw nutErr;
+
+      const { data: gutData, error: gutErr } = await supabase
+        .from('gut_health_logs')
+        .select('*')
+        .eq('user_id', userId)
+        .order('timestamp', { ascending: false });
+
+      if (gutErr) throw gutErr;
+
+      const formatNutrition = (row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        timestamp: row.timestamp,
+        meal: row.meal,
+        portion: row.portion,
+        calories: Number(row.calories) || 0,
+        protein: Number(row.protein) || 0,
+        carbs: Number(row.carbs) || 0,
+        fat: Number(row.fat) || 0,
+        fiber: Number(row.fiber) || 0,
+        sodium: Number(row.sodium) || 0,
+        potassium: Number(row.potassium) || 0,
+        keyVitamins: Array.isArray(row.key_vitamins) ? row.key_vitamins : [],
+        isEstimated: Boolean(row.is_estimated),
+        confidence: Number(row.confidence) || 90,
+        notes: row.notes || '',
+      });
+
+      const formatGut = (row: any) => ({
+        id: row.id,
+        userId: row.user_id,
+        timestamp: row.timestamp,
+        mealReferenceId: row.meal_reference_id,
+        mealName: row.meal_name,
+        ibsRiskLevel: row.ibs_risk_level as any,
+        identifiedTriggers: Array.isArray(row.identified_triggers) ? row.identified_triggers : [],
+        fodmapCategories: {
+          fructans: Number(row.fodmap_fructans) || 0,
+          lactose: Number(row.fodmap_lactose) || 0,
+          excess_fructose: Number(row.fodmap_excess_fructose) || 0,
+          polyols: Number(row.fodmap_polyols) || 0,
+          gos: Number(row.fodmap_gos) || 0,
+        },
+        predictiveDigestiveReaction: row.predictive_digestive_reaction || '',
+        aiRecommendation: row.ai_recommendation || '',
+        groundingReference: row.grounding_reference || '',
+      });
+
+      res.json({
+        nutrition: (nutData || []).map(formatNutrition),
+        gutHealth: (gutData || []).map(formatGut),
+      });
+    } catch (err: any) {
+      console.error('Fetch logs error:', err);
+      res.status(500).json({ error: err.message || 'Failed to fetch logs' });
+    }
   });
 
   // 3. POST new entry
-  app.post('/api/logs', (req: Request, res: Response) => {
+  app.post('/api/logs', async (req: Request, res: Response) => {
+    if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
+    
     try {
-      const { nutrition, gutHealth } = req.body;
-      if (!nutrition || !gutHealth) {
-        return res.status(400).json({ error: 'Both nutrition and gutHealth records are required.' });
+      const { nutrition, gutHealth, userId } = req.body;
+      if (!nutrition || !gutHealth || !userId) {
+        return res.status(400).json({ error: 'userId, nutrition, and gutHealth are required.' });
       }
 
-      // Check duplicates by meal name and timestamp within 30 seconds
-      const isDuplicate = db.nutrition.some(
-        (n) =>
-          n.meal.toLowerCase() === nutrition.meal.toLowerCase() &&
-          Math.abs(new Date(n.timestamp).getTime() - new Date(nutrition.timestamp).getTime()) < 30000
-      );
+      // Insert nutrition log
+      const { error: nutErr } = await supabase.from('nutrition_logs').insert({
+        id: nutrition.id,
+        user_id: userId,
+        timestamp: nutrition.timestamp,
+        meal: nutrition.meal,
+        portion: nutrition.portion,
+        calories: nutrition.calories,
+        protein: nutrition.protein,
+        carbs: nutrition.carbs,
+        fat: nutrition.fat,
+        fiber: nutrition.fiber,
+        sodium: nutrition.sodium,
+        potassium: nutrition.potassium,
+        key_vitamins: nutrition.keyVitamins || [],
+        is_estimated: nutrition.isEstimated,
+        confidence: nutrition.confidence,
+        notes: nutrition.notes || '',
+      });
 
-      if (isDuplicate) {
-        return res.status(409).json({ error: 'Duplicate entry detected within the same time window.' });
-      }
+      if (nutErr) throw nutErr;
 
-      db.nutrition.unshift(nutrition);
-      db.gutHealth.unshift(gutHealth);
-      saveStoredData(db);
+      // Insert gut health log
+      const { error: gutErr } = await supabase.from('gut_health_logs').insert({
+        id: gutHealth.id,
+        user_id: userId,
+        timestamp: gutHealth.timestamp,
+        meal_reference_id: nutrition.id,
+        meal_name: gutHealth.mealName || nutrition.meal,
+        ibs_risk_level: gutHealth.ibsRiskLevel,
+        identified_triggers: gutHealth.identifiedTriggers || [],
+        fodmap_fructans: gutHealth.fodmapCategories?.fructans || 0,
+        fodmap_lactose: gutHealth.fodmapCategories?.lactose || 0,
+        fodmap_excess_fructose: gutHealth.fodmapCategories?.excess_fructose || 0,
+        fodmap_polyols: gutHealth.fodmapCategories?.polyols || 0,
+        fodmap_gos: gutHealth.fodmapCategories?.gos || 0,
+        predictive_digestive_reaction: gutHealth.predictiveDigestiveReaction || '',
+        ai_recommendation: gutHealth.aiRecommendation || '',
+        grounding_reference: gutHealth.groundingReference || '',
+      });
 
-      res.status(201).json({ success: true, count: db.nutrition.length });
+      if (gutErr) throw gutErr;
+
+      res.status(201).json({ success: true });
     } catch (err: any) {
       console.error('Error adding log:', err);
       res.status(500).json({ error: err.message || 'Failed to save log entry' });
@@ -201,57 +257,92 @@ async function startServer() {
   });
 
   // 4. DELETE log
-  app.delete('/api/logs/:id', (req: Request, res: Response) => {
+  app.delete('/api/logs/:id', async (req: Request, res: Response) => {
+    if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
     const { id } = req.params;
-    const initialNutLen = db.nutrition.length;
-    db.nutrition = db.nutrition.filter((n) => n.id !== id);
-    db.gutHealth = db.gutHealth.filter((g) => g.id !== id && g.mealReferenceId !== id);
-    if (db.nutrition.length < initialNutLen) {
-      saveStoredData(db);
-      return res.json({ success: true, message: 'Record removed successfully' });
+    const userId = req.query.userId as string | undefined;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
     }
-    return res.status(404).json({ error: 'Log entry not found' });
+
+    try {
+      const { error } = await supabase
+        .from('nutrition_logs')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
+        
+      if (error) throw error;
+      return res.json({ success: true, message: 'Record removed successfully' });
+    } catch (err: any) {
+      console.error('Error deleting log:', err);
+      return res.status(500).json({ error: 'Failed to delete log entry' });
+    }
   });
 
   // 4b. PUT update log
-  app.put('/api/logs/:id', (req: Request, res: Response) => {
+  app.put('/api/logs/:id', async (req: Request, res: Response) => {
+    if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
     const { id } = req.params;
-    const { nutrition, gutHealth } = req.body;
-    let updated = false;
+    const { nutrition, gutHealth, userId } = req.body;
 
-    if (nutrition) {
-      const idx = db.nutrition.findIndex((n) => n.id === id);
-      if (idx !== -1) {
-        db.nutrition[idx] = { ...db.nutrition[idx], ...nutrition };
-        updated = true;
-      }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
     }
 
-    if (gutHealth) {
-      const gIdx = db.gutHealth.findIndex(
-        (g) => g.id === gutHealth.id || g.mealReferenceId === id || g.id === id
-      );
-      if (gIdx !== -1) {
-        db.gutHealth[gIdx] = { ...db.gutHealth[gIdx], ...gutHealth };
-        updated = true;
+    try {
+      if (nutrition) {
+        const { error: nutErr } = await supabase
+          .from('nutrition_logs')
+          .update({
+            timestamp: nutrition.timestamp,
+            meal: nutrition.meal,
+            portion: nutrition.portion,
+            calories: nutrition.calories,
+            protein: nutrition.protein,
+            carbs: nutrition.carbs,
+            fat: nutrition.fat,
+            fiber: nutrition.fiber,
+            sodium: nutrition.sodium,
+            potassium: nutrition.potassium,
+            key_vitamins: nutrition.keyVitamins || [],
+            is_estimated: nutrition.isEstimated,
+            confidence: nutrition.confidence,
+            notes: nutrition.notes || '',
+          })
+          .eq('id', id)
+          .eq('user_id', userId);
+        if (nutErr) throw nutErr;
       }
-    }
 
-    if (updated) {
-      saveStoredData(db);
+      if (gutHealth) {
+        const { error: gutErr } = await supabase
+          .from('gut_health_logs')
+          .update({
+            timestamp: gutHealth.timestamp,
+            meal_name: gutHealth.mealName || nutrition?.meal,
+            ibs_risk_level: gutHealth.ibsRiskLevel,
+            identified_triggers: gutHealth.identifiedTriggers || [],
+            fodmap_fructans: gutHealth.fodmapCategories?.fructans || 0,
+            fodmap_lactose: gutHealth.fodmapCategories?.lactose || 0,
+            fodmap_excess_fructose: gutHealth.fodmapCategories?.excess_fructose || 0,
+            fodmap_polyols: gutHealth.fodmapCategories?.polyols || 0,
+            fodmap_gos: gutHealth.fodmapCategories?.gos || 0,
+            predictive_digestive_reaction: gutHealth.predictiveDigestiveReaction || '',
+            ai_recommendation: gutHealth.aiRecommendation || '',
+            grounding_reference: gutHealth.groundingReference || '',
+          })
+          .eq('meal_reference_id', id)
+          .eq('user_id', userId);
+        if (gutErr) throw gutErr;
+      }
+
       return res.json({ success: true, message: 'Record updated successfully' });
+    } catch (err: any) {
+      console.error('Error updating log:', err);
+      return res.status(500).json({ error: 'Failed to update log entry' });
     }
-    return res.status(404).json({ error: 'Log entry not found' });
-  });
-
-  // 5. POST reset logs to initial seed data
-  app.post('/api/logs/reset', (_req: Request, res: Response) => {
-    db = {
-      nutrition: [...INITIAL_NUTRITION_LOGS],
-      gutHealth: [...INITIAL_GUT_HEALTH_LOGS],
-    };
-    saveStoredData(db);
-    res.json({ success: true, nutrition: db.nutrition, gutHealth: db.gutHealth });
   });
 
   // 6. POST analyze-food (Multimodal Gemini with Notebook Grounding)
