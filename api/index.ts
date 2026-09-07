@@ -1,18 +1,36 @@
 import express, { Request, Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
-import { createClient } from '@supabase/supabase-js';
-import { constructIbsSystemInstruction } from '../src/lib/clinicalKnowledgeBase';
-import { NutritionLogEntry, GutHealthLogEntry } from '../src/types';
-
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import 'dotenv/config';
 
-// Initialize Supabase Client
-const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+// Safe Supabase client getter with lazy initialization
+let supabaseInstance: SupabaseClient | null = null;
 
-const supabase = supabaseUrl && supabaseKey 
-  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } }) 
-  : null;
+function getSupabase(): SupabaseClient | null {
+  if (supabaseInstance) return supabaseInstance;
+
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const supabaseKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    '';
+
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('[Supabase] Missing SUPABASE_URL or keys in environment variables.');
+    return null;
+  }
+
+  try {
+    supabaseInstance = createClient(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
+    });
+    return supabaseInstance;
+  } catch (err) {
+    console.error('[Supabase] Failed to initialize client:', err);
+    return null;
+  }
+}
 
 // Lazy Gemini client helper
 let aiClient: GoogleGenAI | null = null;
@@ -32,6 +50,38 @@ function getGeminiClient(): GoogleGenAI {
     });
   }
   return aiClient;
+}
+
+// Self-contained IBS system instruction builder (avoids external relative imports on Vercel)
+function constructIbsSystemInstruction(customRules?: any[], userTolerance?: any): string {
+  const rules = Array.isArray(customRules) && customRules.length > 0 ? customRules : [];
+  const activeRules = rules
+    .filter((r: any) => r.enabled !== false)
+    .map((r: any, i: number) => `${i + 1}. [${r.category || 'General'}] ${r.title || 'Rule'}: ${r.ruleText || ''} (Source: ${r.source || 'Clinical Guide'})`)
+    .join('\n');
+
+  const subtype = userTolerance?.subtype || 'Open / Unclassified Spectrum';
+
+  return `You are a Principal Clinical Gastroenterology & Nutritional AI Engine specializing in Irritable Bowel Syndrome (IBS) and Disorders of Gut-Brain Interaction (DGBI).
+
+Your clinical analysis is rigorously grounded in evidence-based research:
+- Mayer, Ryu & Bhatt (2023) Brain-gut-microbiome connectome & stress-primed visceral hypersensitivity.
+- Holtmann, Ford & Talley (2016) High-fat exaggerated gastrocolic reflex & bile acid malabsorption.
+- Rome IV / StatPearls High vs Low FODMAP criteria.
+
+USER CLINICAL PROFILE:
+- Subtype: ${subtype}
+- Clinical Stance: Evaluate open-mindedly across rapid transit / loose stools OR delayed transit / constipation / gas entrapment.
+- Known Triggers: ${Array.isArray(userTolerance?.knownSevereTriggers) ? userTolerance.knownSevereTriggers.join(', ') : 'High oils, heavy spices, alliums'}
+
+ACTIVE GROUNDING CRITERIA:
+${activeRules || 'Evaluate based on standard clinical FODMAP guidelines.'}
+
+EVALUATION DIRECTIVES:
+1. Identify all food ingredients, portion sizes, calories, and macros.
+2. Quantify 5 FODMAP categories (fructans, lactose, excess_fructose, polyols, gos) on a 0-5 scale.
+3. Assess gastrocolic reflex, bile acid load, and visceral hypersensitivity.
+4. Predict transit timeline and offer actionable culinary substitutions.`;
 }
 
 async function callGeminiWithRetryAndFallback(
@@ -98,24 +148,34 @@ const app = express();
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
-app.get('/api/health', (_req: Request, res: Response) => {
+// Router for handling API endpoints under both `/api` and `/` (prevents Vercel rewrite mismatches)
+const router = express.Router();
+
+router.get('/health', (_req: Request, res: Response) => {
+  const sb = getSupabase();
   res.json({
     status: 'ok',
     hasGeminiKey: Boolean(process.env.GEMINI_API_KEY),
+    hasSupabase: Boolean(sb),
     timestamp: new Date().toISOString(),
   });
 });
 
-app.get('/api/logs', async (req: Request, res: Response) => {
-  if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
+router.get('/logs', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) {
+    return res.status(503).json({
+      error: 'Supabase credentials not configured in environment variables (SUPABASE_URL, SUPABASE_ANON_KEY).',
+    });
+  }
+
   const userId = req.query.userId as string | undefined;
-  
   if (!userId) {
     return res.status(400).json({ error: 'userId is required' });
   }
 
   try {
-    const { data: nutData, error: nutErr } = await supabase
+    const { data: nutData, error: nutErr } = await sb
       .from('nutrition_logs')
       .select('*')
       .eq('user_id', userId)
@@ -123,7 +183,7 @@ app.get('/api/logs', async (req: Request, res: Response) => {
 
     if (nutErr) throw nutErr;
 
-    const { data: gutData, error: gutErr } = await supabase
+    const { data: gutData, error: gutErr } = await sb
       .from('gut_health_logs')
       .select('*')
       .eq('user_id', userId)
@@ -156,7 +216,7 @@ app.get('/api/logs', async (req: Request, res: Response) => {
       timestamp: row.timestamp,
       mealReferenceId: row.meal_reference_id,
       mealName: row.meal_name,
-      ibsRiskLevel: row.ibs_risk_level as any,
+      ibsRiskLevel: row.ibs_risk_level,
       identifiedTriggers: Array.isArray(row.identified_triggers) ? row.identified_triggers : [],
       fodmapCategories: {
         fructans: Number(row.fodmap_fructans) || 0,
@@ -180,8 +240,11 @@ app.get('/api/logs', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/logs', async (req: Request, res: Response) => {
-  if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
+router.post('/logs', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) {
+    return res.status(503).json({ error: 'Supabase credentials not configured in environment variables.' });
+  }
   
   try {
     const { nutrition, gutHealth, userId } = req.body;
@@ -189,7 +252,7 @@ app.post('/api/logs', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'userId, nutrition, and gutHealth are required.' });
     }
 
-    const { error: nutErr } = await supabase.from('nutrition_logs').insert({
+    const { error: nutErr } = await sb.from('nutrition_logs').insert({
       id: nutrition.id,
       user_id: userId,
       timestamp: nutrition.timestamp,
@@ -210,7 +273,7 @@ app.post('/api/logs', async (req: Request, res: Response) => {
 
     if (nutErr) throw nutErr;
 
-    const { error: gutErr } = await supabase.from('gut_health_logs').insert({
+    const { error: gutErr } = await sb.from('gut_health_logs').insert({
       id: gutHealth.id,
       user_id: userId,
       timestamp: gutHealth.timestamp,
@@ -237,8 +300,9 @@ app.post('/api/logs', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/logs/:id', async (req: Request, res: Response) => {
-  if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
+router.delete('/logs/:id', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
   const { id } = req.params;
   const userId = req.query.userId as string | undefined;
 
@@ -247,7 +311,7 @@ app.delete('/api/logs/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const { error } = await supabase
+    const { error } = await sb
       .from('nutrition_logs')
       .delete()
       .eq('id', id)
@@ -261,8 +325,9 @@ app.delete('/api/logs/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.put('/api/logs/:id', async (req: Request, res: Response) => {
-  if (!supabase) return res.status(500).json({ error: 'Supabase backend not configured.' });
+router.put('/logs/:id', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
   const { id } = req.params;
   const { nutrition, gutHealth, userId } = req.body;
 
@@ -272,7 +337,7 @@ app.put('/api/logs/:id', async (req: Request, res: Response) => {
 
   try {
     if (nutrition) {
-      const { error: nutErr } = await supabase
+      const { error: nutErr } = await sb
         .from('nutrition_logs')
         .update({
           timestamp: nutrition.timestamp,
@@ -296,7 +361,7 @@ app.put('/api/logs/:id', async (req: Request, res: Response) => {
     }
 
     if (gutHealth) {
-      const { error: gutErr } = await supabase
+      const { error: gutErr } = await sb
         .from('gut_health_logs')
         .update({
           timestamp: gutHealth.timestamp,
@@ -324,7 +389,7 @@ app.put('/api/logs/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/analyze-food', async (req: Request, res: Response) => {
+router.post('/analyze-food', async (req: Request, res: Response) => {
   try {
     const { textDescription, imageBase64, imageMimeType, customRules, userTolerance } = req.body;
 
@@ -435,7 +500,7 @@ app.post('/api/analyze-food', async (req: Request, res: Response) => {
         ? parsed.ibsRiskLevel
         : 'Medium';
 
-    const nutrition: NutritionLogEntry = {
+    const nutrition = {
       id: 'nut-' + Date.now(),
       timestamp,
       meal: parsed.mealName || 'Analyzed Meal',
@@ -453,7 +518,7 @@ app.post('/api/analyze-food', async (req: Request, res: Response) => {
       notes: parsed.analysisSummary || '',
     };
 
-    const gutHealth: GutHealthLogEntry = {
+    const gutHealth = {
       id: 'gut-' + Date.now(),
       timestamp,
       mealReferenceId: nutrition.id,
@@ -499,5 +564,9 @@ app.post('/api/analyze-food', async (req: Request, res: Response) => {
     });
   }
 });
+
+// Mount the router under both `/api` and `/` to handle any Vercel rewrite configuration
+app.use('/api', router);
+app.use('/', router);
 
 export default app;
