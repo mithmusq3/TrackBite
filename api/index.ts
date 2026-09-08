@@ -91,7 +91,12 @@ async function callGeminiWithRetryAndFallback(
     config: any;
   }
 ) {
-  const candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
+  const candidateModels = [
+    'gemini-3.8-flash',
+    'gemini-3.1-flash',
+    'gemini-3.1-flash-lite',
+    'gemini-1.5-flash'
+  ];
   let lastError: any = null;
 
   for (const model of candidateModels) {
@@ -122,12 +127,14 @@ async function callGeminiWithRetryAndFallback(
         console.warn(`[Gemini API] Model ${model} attempt ${attempt} failed: ${errMsg}`);
 
         if (isTransient && attempt < 2) {
+          console.log(`[Gemini API] Retrying ${model} in ${1500 * attempt}ms...`);
           await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
           continue;
         }
 
         if (isTransient) {
-          break;
+          console.warn(`[Gemini API] Exhausted attempts for ${model}, falling back to next available model...`);
+          break; // Move to the next model in candidateModels
         }
 
         throw err;
