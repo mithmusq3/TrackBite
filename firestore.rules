@@ -17,6 +17,9 @@ service cloud.firestore {
     // User Profiles - strictly private to the authenticated owner
     match /users/{userId} {
       allow read, write: if isOwner(userId);
+      match /{document=**} {
+        allow read, write: if isOwner(userId);
+      }
     }
 
     // Nutrition Logs - strictly readable and writable only by the authenticated owner

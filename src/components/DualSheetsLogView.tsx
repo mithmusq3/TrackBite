@@ -27,6 +27,7 @@ import { GoogleSignInButton } from './GoogleSignInButton';
 interface DualSheetsLogViewProps {
   nutritionLogs: NutritionLogEntry[];
   gutHealthLogs: GutHealthLogEntry[];
+  symptomLogs: any[]; // Or properly imported SymptomLogEntry
   onDeleteLog: (id: string) => void;
   onUpdateLog: (updatedNutrition: NutritionLogEntry, updatedGutHealth?: GutHealthLogEntry) => void;
   currentUser: User | null;
@@ -36,12 +37,13 @@ interface DualSheetsLogViewProps {
 export const DualSheetsLogView: React.FC<DualSheetsLogViewProps> = ({
   nutritionLogs,
   gutHealthLogs,
+  symptomLogs,
   onDeleteLog,
   onUpdateLog,
   currentUser,
   onAuthChange,
 }) => {
-  const [activeTab, setActiveTab] = useState<'nutrition' | 'gutHealth'>('nutrition');
+  const [activeTab, setActiveTab] = useState<'nutrition' | 'gutHealth' | 'symptoms'>('nutrition');
   const [searchTerm, setSearchTerm] = useState('');
   const [riskFilter, setRiskFilter] = useState<'ALL' | 'Low' | 'Medium' | 'High'>('ALL');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -216,6 +218,21 @@ export const DualSheetsLogView: React.FC<DualSheetsLogViewProps> = ({
                 {gutHealthLogs.length}
               </span>
             </button>
+            <button
+              id="sheet-tab-symptoms-btn"
+              onClick={() => setActiveTab('symptoms')}
+              className={`flex-1 xs:flex-none px-3 py-1.5 rounded-md transition-all flex items-center justify-center space-x-1.5 min-h-[32px] ${
+                activeTab === 'symptoms'
+                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-2xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              <span className="sm:hidden">Symptoms</span>
+              <span className="hidden sm:inline">Sheet 3: Symptom_Log</span>
+              <span className="px-1.5 py-0.2 rounded font-mono bg-zinc-200 dark:bg-zinc-600 text-zinc-700 dark:text-zinc-200 text-[10px]">
+                {symptomLogs.length}
+              </span>
+            </button>
           </div>
 
           {/* Export CSV button */}
@@ -223,7 +240,7 @@ export const DualSheetsLogView: React.FC<DualSheetsLogViewProps> = ({
             id="export-csv-btn"
             onClick={() => {
               if (activeTab === 'nutrition') exportNutritionToCSV(filteredNutrition);
-              else exportGutHealthToCSV(filteredGutHealth);
+              else if (activeTab === 'gutHealth') exportGutHealthToCSV(filteredGutHealth);
             }}
             className="px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-medium flex items-center space-x-1 transition-colors min-h-[32px]"
             title="Download CSV for the active worksheet"
@@ -819,6 +836,101 @@ export const DualSheetsLogView: React.FC<DualSheetsLogViewProps> = ({
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* SYMPTOMS LOG SHEET */}
+      {activeTab === 'symptoms' && (
+        <>
+          {/* Mobile List View (Symptoms) */}
+          <div className="md:hidden divide-y divide-zinc-100 dark:divide-zinc-800">
+            {symptomLogs.length === 0 ? (
+              <div className="py-10 text-center text-xs text-zinc-400">
+                No symptom logs recorded.
+              </div>
+            ) : (
+              symptomLogs.map((log) => {
+                const dateObj = new Date(log.timestamp);
+                return (
+                  <div key={log.id} className="p-4 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="text-[10px] font-semibold text-zinc-500 mb-1">
+                          {dateObj.toLocaleDateString()} {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {log.symptoms.map((sym: string) => (
+                            <span key={sym} className="px-1.5 py-0.5 rounded-sm bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 text-[10px] font-medium border border-rose-100 dark:border-rose-800">
+                              {sym}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    {log.notes && (
+                      <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-2 p-2 bg-zinc-50 dark:bg-zinc-800/50 rounded border border-zinc-100 dark:border-zinc-800/80">
+                        {log.notes}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop Table View (Symptoms) */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-xs text-zinc-700 dark:text-zinc-300">
+              <thead className="bg-zinc-50 dark:bg-zinc-800/80 text-[11px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider border-b border-zinc-200/80 dark:border-zinc-800">
+                <tr>
+                  <th className="py-2.5 px-4 font-semibold w-48">Timestamp</th>
+                  <th className="py-2.5 px-4 font-semibold w-1/3">Symptoms Logged</th>
+                  <th className="py-2.5 px-4 font-semibold">Additional Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                {symptomLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="py-10 text-center text-zinc-400">
+                      No symptom logs recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  symptomLogs.map((log) => {
+                    const dateObj = new Date(log.timestamp);
+                    return (
+                      <tr key={log.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40 transition-colors">
+                        <td className="py-3 px-4 whitespace-nowrap align-top">
+                          <div className="font-medium text-zinc-900 dark:text-zinc-100">
+                            {dateObj.toLocaleDateString()}
+                          </div>
+                          <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                            {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 align-top">
+                          <div className="flex flex-wrap gap-1.5">
+                            {log.symptoms.map((sym: string) => (
+                              <span key={sym} className="px-2 py-0.5 rounded bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 text-[10px] font-medium border border-rose-100 dark:border-rose-800">
+                                {sym}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 align-top max-w-sm">
+                          {log.notes ? (
+                            <span className="text-zinc-600 dark:text-zinc-400 block whitespace-pre-wrap">{log.notes}</span>
+                          ) : (
+                            <span className="text-zinc-400 italic text-[11px]">—</span>
                           )}
                         </td>
                       </tr>

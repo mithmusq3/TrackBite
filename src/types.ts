@@ -114,3 +114,11 @@ export interface UserPersonalToleranceContext {
   customClinicalNotes: string;
   dailyGoals?: DailyNutrientGoals;
 }
+
+export interface SymptomLogEntry {
+  id: string;
+  userId?: string;
+  timestamp: string; // ISO 8601
+  symptoms: string[];
+  notes?: string;
+}

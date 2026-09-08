@@ -11,6 +11,7 @@ import { Header } from './components/Header';
 import { MultimodalFoodAnalyzer } from './components/MultimodalFoodAnalyzer';
 import { DualSheetsLogView } from './components/DualSheetsLogView';
 import { AnalyticsDashboard } from './components/AnalyticsDashboard';
+import { SymptomLogger } from './components/SymptomLogger';
 import { NotebookGroundingModal } from './components/NotebookGroundingModal';
 import {
   NutritionLogEntry,
@@ -18,6 +19,7 @@ import {
   FoodAnalysisResponse,
   NotebookGroundingRule,
   UserPersonalToleranceContext,
+  SymptomLogEntry
 } from './types';
 import {
   DEFAULT_GROUNDING_RULES,
@@ -27,6 +29,7 @@ import { initAuth } from './lib/googleAuth';
 import {
   syncUserProfile,
   subscribeToUserLogs,
+  subscribeToSymptomLogs,
   saveMealToDatabase,
   updateMealInDatabase,
   deleteMealFromDatabase,
@@ -65,6 +68,7 @@ export default function App() {
   // Core live data states (populated live from Firestore strictly for currentUser.uid)
   const [nutritionLogs, setNutritionLogs] = useState<NutritionLogEntry[]>([]);
   const [gutHealthLogs, setGutHealthLogs] = useState<GutHealthLogEntry[]>([]);
+  const [symptomLogs, setSymptomLogs] = useState<SymptomLogEntry[]>([]);
 
   // Clinical grounding & context states (seeded from uploaded NotebookLM clinical library)
   const [groundingRules, setGroundingRules] = useState<NotebookGroundingRule[]>(() => {
@@ -126,6 +130,7 @@ export default function App() {
     if (!currentUser) {
       setNutritionLogs([]);
       setGutHealthLogs([]);
+      setSymptomLogs([]);
       return;
     }
 
@@ -145,9 +150,22 @@ export default function App() {
       }
     );
 
+    // Live subscription to Supabase for Symptom Logs
+    const unsubSymptoms = subscribeToSymptomLogs(
+      userId,
+      (logs) => {
+        if (!isMounted) return;
+        setSymptomLogs(logs);
+      },
+      (error) => {
+        console.warn("Error fetching symptoms", error);
+      }
+    );
+
     return () => {
       isMounted = false;
       unsubscribe();
+      unsubSymptoms();
     };
   }, [currentUser?.uid]);
 
@@ -401,7 +419,7 @@ export default function App() {
       {/* Main Container Content */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
         {/* VIEW 1: MULTIMODAL ANALYZER */}
-        <div className={activeView === 'analyzer' ? 'block' : 'hidden'}>
+        <div className={activeView === 'analyzer' ? 'flex flex-col space-y-4 sm:space-y-6' : 'hidden'}>
           <MultimodalFoodAnalyzer
             onAddLog={handleAddLog}
             groundingRules={groundingRules}
@@ -409,6 +427,7 @@ export default function App() {
             onOpenNotebookModal={() => setIsNotebookModalOpen(true)}
             currentUser={currentUser}
           />
+          <SymptomLogger currentUser={currentUser} />
         </div>
 
         {/* VIEW 2: DATABASE WORKSHEETS LOG */}
@@ -416,6 +435,7 @@ export default function App() {
           <DualSheetsLogView
             nutritionLogs={nutritionLogs}
             gutHealthLogs={gutHealthLogs}
+            symptomLogs={symptomLogs}
             onDeleteLog={handleDeleteLog}
             onUpdateLog={handleUpdateLog}
             currentUser={currentUser}

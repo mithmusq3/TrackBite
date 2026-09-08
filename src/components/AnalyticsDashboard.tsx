@@ -34,6 +34,7 @@ import {
   Sliders,
   Target,
   Lock,
+  Activity,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { NutritionLogEntry, GutHealthLogEntry, UserPersonalToleranceContext, DailyNutrientGoals } from '../types';
@@ -690,14 +691,14 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
         <div className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xs">
           <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 mb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Sodium Balance</span>
-            <HeartPulse className="w-3.5 h-3.5 text-teal-500" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider">Protein Range</span>
+            <Activity className="w-3.5 h-3.5 text-blue-500" />
           </div>
-          <p className="text-xl font-bold text-teal-600 dark:text-teal-400 font-mono mt-1">
-            {displaySodium} <span className="text-xs font-normal text-zinc-400">mg</span>
+          <p className="text-xl font-bold text-blue-600 dark:text-blue-400 font-mono mt-1">
+            {displayProtein} <span className="text-xs font-normal text-zinc-400">g</span>
           </p>
           <p className="text-[11px] text-zinc-400 mt-1">
-            {displaySodium <= 2300 ? 'Within <=2300mg limit' : 'Above 2300mg ceiling'}
+            Goal: {goals.proteinMin}–{goals.proteinMax}g
           </p>
         </div>
 
@@ -748,7 +749,9 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+            <div className="mb-1">
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">Macronutrients</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-5">
               {/* Calories */}
               <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/60 dark:border-zinc-700/60">
                 <div className="flex justify-between text-xs font-semibold mb-1">
@@ -825,6 +828,10 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 </span>
               </div>
 
+              </div>
+
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">Micronutrients & Fiber</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
               {/* Fiber */}
               <div className="p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200/60 dark:border-zinc-700/60">
                 <div className="flex justify-between text-xs font-semibold mb-1">
@@ -882,6 +889,7 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
                 <span className="text-[10px] text-zinc-400 mt-1 block">
                   {Math.round((totalPotassium / TARGET_POTASSIUM) * 100)}% target
                 </span>
+              </div>
               </div>
             </div>
           </div>
