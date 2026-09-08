@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
+import { Analytics } from '@vercel/analytics/react';
 import {
   Camera,
   FileSpreadsheet,
@@ -417,6 +418,9 @@ export default function App() {
         userContext={userContext}
         onUpdateUserContext={handleUpdateUserContext}
       />
+      
+      {/* Vercel Web Analytics */}
+      <Analytics />
     </div>
   );
 }
