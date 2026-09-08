@@ -30,6 +30,8 @@ import {
   saveMealToDatabase,
   updateMealInDatabase,
   deleteMealFromDatabase,
+  getUserPreferences,
+  saveUserPreferences
 } from './lib/databaseService';
 
 export default function App() {
@@ -91,12 +93,27 @@ export default function App() {
             email: user.email || '',
             photoURL: user.photoURL || '',
           });
+          
+          getUserPreferences(user.uid).then((prefs) => {
+            if (prefs.rules) {
+              setGroundingRules(prefs.rules);
+              localStorage.setItem('ibs_grounding_rules_v3', JSON.stringify(prefs.rules));
+            }
+            if (prefs.context) {
+              setUserContext(prefs.context);
+              localStorage.setItem('ibs_user_context_v3', JSON.stringify(prefs.context));
+            }
+          }).catch(err => console.error("Failed to load user preferences", err));
         }
       },
       () => {
         setCurrentUser(null);
         setNutritionLogs([]);
         setGutHealthLogs([]);
+        setGroundingRules(DEFAULT_GROUNDING_RULES);
+        setUserContext(DEFAULT_TOLERANCE_CONTEXT);
+        localStorage.removeItem('ibs_grounding_rules_v3');
+        localStorage.removeItem('ibs_user_context_v3');
       }
     );
     return () => {
@@ -144,25 +161,57 @@ export default function App() {
         email: user.email || '',
         photoURL: user.photoURL || '',
       });
+      getUserPreferences(user.uid).then((prefs) => {
+        if (prefs.rules) {
+          setGroundingRules(prefs.rules);
+          localStorage.setItem('ibs_grounding_rules_v3', JSON.stringify(prefs.rules));
+        }
+        if (prefs.context) {
+          setUserContext(prefs.context);
+          localStorage.setItem('ibs_user_context_v3', JSON.stringify(prefs.context));
+        }
+      }).catch(err => console.error("Failed to load user preferences", err));
+      
       showToast(`Connected as ${user.displayName || user.email}`);
     } else {
       setNutritionLogs([]);
       setGutHealthLogs([]);
+      setGroundingRules(DEFAULT_GROUNDING_RULES);
+      setUserContext(DEFAULT_TOLERANCE_CONTEXT);
+      localStorage.removeItem('ibs_grounding_rules_v3');
+      localStorage.removeItem('ibs_user_context_v3');
       showToast('Signed out successfully.');
     }
   };
 
-  // Save rules & context to local storage
+  // Save rules & context to local storage and DB
   const handleUpdateRules = (newRules: NotebookGroundingRule[]) => {
     setGroundingRules(newRules);
     localStorage.setItem('ibs_grounding_rules_v3', JSON.stringify(newRules));
+    if (currentUser) {
+      saveUserPreferences(currentUser.uid, newRules, userContext).catch(console.error);
+    }
     showToast('Clinical grounding rules updated.');
   };
 
   const handleUpdateUserContext = (newContext: UserPersonalToleranceContext) => {
     setUserContext(newContext);
     localStorage.setItem('ibs_user_context_v3', JSON.stringify(newContext));
+    if (currentUser) {
+      saveUserPreferences(currentUser.uid, groundingRules, newContext).catch(console.error);
+    }
     showToast(`Patient tolerance profile updated (${newContext.subtype}).`);
+  };
+
+  const handleSaveAll = (newRules: NotebookGroundingRule[], newContext: UserPersonalToleranceContext) => {
+    setGroundingRules(newRules);
+    setUserContext(newContext);
+    localStorage.setItem('ibs_grounding_rules_v3', JSON.stringify(newRules));
+    localStorage.setItem('ibs_user_context_v3', JSON.stringify(newContext));
+    if (currentUser) {
+      saveUserPreferences(currentUser.uid, newRules, newContext).catch(console.error);
+    }
+    showToast('Clinical grounding and profile updated.');
   };
 
   const showToast = (msg: string) => {
@@ -416,6 +465,7 @@ export default function App() {
         onUpdateRules={handleUpdateRules}
         userContext={userContext}
         onUpdateUserContext={handleUpdateUserContext}
+        onSaveAll={handleSaveAll}
       />
     </div>
   );

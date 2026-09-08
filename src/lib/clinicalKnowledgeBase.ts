@@ -147,23 +147,10 @@ export const DEFAULT_GROUNDING_RULES: NotebookGroundingRule[] = [
 
 export const DEFAULT_TOLERANCE_CONTEXT: UserPersonalToleranceContext = {
   subtype: 'Unspecified',
-  knownSevereTriggers: [
-    'Heavy Restaurant Masala / Curries',
-    'Excessive Cooking Oil / Deep-Fried Foods',
-    'Onion & Garlic Paste Gravies (Allium Fructans)',
-    'High-Heat Red Chili Powder / Capsaicin',
-    'Heavy Dal / Lentil bases in high quantities',
-  ],
-  toleratedFoods: [
-    'Mild South Indian Meals (Idli, Steamed Rice, Plain Dosa)',
-    'Mild Rasam (without heavy tadka/garlic)',
-    'Fresh Curd Rice (tempered mildly with mustard/curry leaves)',
-    'Cooked vegetables (gourd, carrots, potatoes, pumpkin)',
-    'Eggs, Fish, or lean chicken prepared with mild spices',
-  ],
+  knownSevereTriggers: [],
+  toleratedFoods: [],
   dailyFiberGoal: 25,
-  customClinicalNotes:
-    'Patient Profile: South Indian (Chennai). Subtype unconfirmed/open-spectrum (do NOT pigeonhole into IBS-D alone; evaluate open-mindedly across IBS-D, IBS-C, IBS-M, and visceral hypersensitivity). Key trigger pattern: Heavy outside restaurant meals rich in masala, spice, and oils trigger acute gastrointestinal disturbance/loose stools next morning (8-14h), while mild outside foods are well tolerated. History of distinct stress-linked flare-ups during exam/work deadlines indicates central sensitization and lowered visceral threshold (Mayer 2023). Maintain an open-minded differential diagnostic stance on motility and bowel habit.',
+  customClinicalNotes: '',
 };
 
 export function constructIbsSystemInstruction(
@@ -195,9 +182,6 @@ USER CLINICAL PROFILE & SUBTYPE CONTEXT:
 - Clinical Stance: The user does NOT identify with a fixed IBS-D variant. Keep your physiological analysis open-minded and balanced:
   * Consider how meal ingredients might impact motility in BOTH directions (rapid transit / loose stools OR delayed transit / constipation / gas entrapment / bloating, or alternating patterns).
   * Focus on the functional mechanisms (lipid-gastrocolic reflex, mucosal sensitivity, bile acid handling, gas fermentation, and visceral hypersensitivity) rather than labeling the user under any single rigid subtype.
-- Cuisine & Background: South Indian (Chennai), regularly eats outside/restaurant food.
-- Key Clinical Trigger Pattern: Heavily "masala", spicy, and oil-rich restaurant meals reliably trigger severe gastrointestinal disturbance the next morning (8-14h). Mild outside meals with lower spice/oil are tolerated fine.
-- Known Stress Priming: Previous onsets during Class 11-12 exams, college placements, and intense work deadlines indicate underlying central sensitization (Mayer 2023).
 - Known Severe Triggers: ${userContext.knownSevereTriggers.join(', ')}
 - Tolerated Foods: ${userContext.toleratedFoods.join(', ')}
 - Clinical Notes: ${userContext.customClinicalNotes}
@@ -208,12 +192,12 @@ ${activeRules}
 EVALUATION DIRECTIVES:
 1. When analyzing a food photo or description, identify all ingredients including hidden restaurant components (e.g. concentrated onion/garlic paste, heavy palm/refined oil or excess ghee, red chili powder, high-FODMAP lentils/dairy).
 2. Quantify FODMAP categories (fructans, lactose, excess_fructose, polyols, gos) on a 0 to 5 scale.
-3. Assess the "Masala / Lipid / Capsaicin" burden specifically for this South Indian user:
+3. Assess the lipid and spice burden specifically:
    - High oil/fat triggers the gastrocolic reflex and potential bile acid overload (Holtmann 2016).
    - Chili/capsaicin activates TRPV1 nociceptors (StatPearls 2026).
    - Onion/garlic gravies add severe fructan fermentation.
 4. Predict digestive reaction and latency with an open mind:
    - State anticipated motility responses (whether rapid transit/loose stool or constipation/gas entrapment, or alternating discomfort) and approximate timeline (e.g., immediate 1-2h upper GI, or 8-14h colonic transit the next morning).
-5. Provide actionable South Indian culinary swaps (e.g., recommend asafetida/hing instead of garlic paste, tempered ginger and curry leaves, lighter tomato/rasam broths, steamed idli/appam instead of oily parottas, requesting gravy on the side).
+5. Provide actionable culinary swaps relevant to the meal.
 6. Grounding Reference: Cite the specific paper(s) from the user's library that justify your assessment (e.g. "Holtmann et al. 2016 (Lipid/Bile Acid) & StatPearls 2026 (Allium Fructans)").`;
 }

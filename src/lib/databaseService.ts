@@ -346,3 +346,51 @@ export async function deleteFavoriteMeal(id: string, userId: string): Promise<vo
   if (error) throw error;
 }
 
+export async function getUserPreferences(userId: string): Promise<{
+  rules: any[] | null;
+  context: any | null;
+}> {
+  const sb = getDirectSupabase();
+  if (!sb) return { rules: null, context: null };
+  
+  const { data, error } = await sb
+    .from('user_preferences')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+    
+  if (error) {
+    if (error.code !== 'PGRST116') { // PGRST116 means no rows found, which is fine
+      console.error('Failed to fetch user preferences:', error);
+    }
+    return { rules: null, context: null };
+  }
+  
+  return {
+    rules: data?.grounding_rules || null,
+    context: data?.tolerance_context || null,
+  };
+}
+
+export async function saveUserPreferences(
+  userId: string,
+  rules: any[],
+  context: any
+): Promise<void> {
+  const sb = getDirectSupabase();
+  if (!sb) throw new Error('Could not connect to database.');
+  
+  const { error } = await sb
+    .from('user_preferences')
+    .upsert({
+      user_id: userId,
+      grounding_rules: rules,
+      tolerance_context: context,
+      updated_at: new Date().toISOString()
+    }, {
+      onConflict: 'user_id'
+    });
+    
+  if (error) throw error;
+}
+

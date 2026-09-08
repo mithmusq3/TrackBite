@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   BookOpen,
@@ -22,6 +22,7 @@ interface NotebookGroundingModalProps {
   onUpdateRules: (rules: NotebookGroundingRule[]) => void;
   userContext: UserPersonalToleranceContext;
   onUpdateUserContext: (ctx: UserPersonalToleranceContext) => void;
+  onSaveAll?: (rules: NotebookGroundingRule[], ctx: UserPersonalToleranceContext) => void;
 }
 
 export const NotebookGroundingModal: React.FC<NotebookGroundingModalProps> = ({
@@ -31,12 +32,20 @@ export const NotebookGroundingModal: React.FC<NotebookGroundingModalProps> = ({
   onUpdateRules,
   userContext,
   onUpdateUserContext,
+  onSaveAll,
 }) => {
   const [activeTab, setActiveTab] = useState<'rules' | 'profile' | 'prompt'>('rules');
   const [tempRules, setTempRules] = useState<NotebookGroundingRule[]>(groundingRules);
   const [tempContext, setTempContext] = useState<UserPersonalToleranceContext>(userContext);
   const [newTriggerInput, setNewTriggerInput] = useState('');
   const [newToleratedInput, setNewToleratedInput] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setTempRules(groundingRules);
+      setTempContext(userContext);
+    }
+  }, [isOpen, groundingRules, userContext]);
 
   if (!isOpen) return null;
 
@@ -79,8 +88,12 @@ export const NotebookGroundingModal: React.FC<NotebookGroundingModalProps> = ({
   };
 
   const handleSaveAndApply = () => {
-    onUpdateRules(tempRules);
-    onUpdateUserContext(tempContext);
+    if (onSaveAll) {
+      onSaveAll(tempRules, tempContext);
+    } else {
+      onUpdateRules(tempRules);
+      onUpdateUserContext(tempContext);
+    }
     onClose();
   };
 
