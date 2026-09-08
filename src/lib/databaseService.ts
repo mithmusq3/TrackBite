@@ -296,3 +296,53 @@ export async function deleteMealFromDatabase(id: string, userId: string): Promis
   const { error } = await sb.from('nutrition_logs').delete().eq('id', id).eq('user_id', userId);
   if (error) throw error;
 }
+
+export async function getFavoriteMeals(userId: string): Promise<any[]> {
+  const sb = getDirectSupabase();
+  if (!sb) return [];
+  
+  const { data, error } = await sb
+    .from('favorite_meals')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+    
+  if (error) {
+    console.error('Failed to fetch favorite meals:', error);
+    return [];
+  }
+  
+  return (data || []).map(row => ({
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    category: row.category,
+    result: row.result,
+    createdAt: row.created_at
+  }));
+}
+
+export async function saveFavoriteMeal(favorite: any): Promise<void> {
+  const sb = getDirectSupabase();
+  if (!sb) throw new Error('Could not connect to database.');
+  
+  const { error } = await sb.from('favorite_meals').insert({
+    id: favorite.id,
+    user_id: favorite.userId,
+    name: favorite.name,
+    category: favorite.category,
+    result: favorite.result,
+    created_at: favorite.createdAt || new Date().toISOString()
+  });
+  
+  if (error) throw error;
+}
+
+export async function deleteFavoriteMeal(id: string, userId: string): Promise<void> {
+  const sb = getDirectSupabase();
+  if (!sb) throw new Error('Could not connect to database.');
+  
+  const { error } = await sb.from('favorite_meals').delete().eq('id', id).eq('user_id', userId);
+  if (error) throw error;
+}
+

@@ -15,13 +15,15 @@ import {
   Flame,
   ArrowRight,
   AlertCircle,
-  Edit3
+  Edit3,
+  Star
 } from 'lucide-react';
-import { FoodAnalysisResponse, NotebookGroundingRule, UserPersonalToleranceContext, NutritionLogEntry, GutHealthLogEntry } from '../types';
+import { FoodAnalysisResponse, NotebookGroundingRule, UserPersonalToleranceContext, NutritionLogEntry, GutHealthLogEntry, FavoriteMeal } from '../types';
 import { EditLogModal } from './EditLogModal';
 import { InfoButton } from './InfoButton';
 import { User } from 'firebase/auth';
 import { CameraCaptureModal } from './CameraCaptureModal';
+import { getFavoriteMeals, saveFavoriteMeal, deleteFavoriteMeal } from '../lib/databaseService';
 
 interface MultimodalFoodAnalyzerProps {
   onAddLog: (response: FoodAnalysisResponse) => void;
@@ -93,6 +95,86 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
       return false;
     }
   });
+
+  const [favorites, setFavorites] = useState<FavoriteMeal[]>([]);
+  const [showFavoritesModal, setShowFavoritesModal] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setFavorites([]);
+      return;
+    }
+    const loadFavorites = async () => {
+      try {
+        const loadedFavs = await getFavoriteMeals(currentUser.uid);
+        setFavorites(loadedFavs);
+      } catch (error) {
+        console.error('Failed to load favorites', error);
+      }
+    };
+    loadFavorites();
+  }, [currentUser]);
+
+  const handleSaveFavorite = async () => {
+    if (!analysisResult || !currentUser) return;
+    const isAlreadyFav = favorites.some(f => f.name === analysisResult.nutrition.meal);
+    if (!isAlreadyFav) {
+      const newFav: FavoriteMeal = {
+        id: `fav-${Date.now()}`,
+        userId: currentUser.uid,
+        name: analysisResult.nutrition.meal,
+        category: mealCategory,
+        result: analysisResult,
+        createdAt: new Date().toISOString()
+      };
+      
+      try {
+        await saveFavoriteMeal(newFav);
+        setFavorites([newFav, ...favorites]);
+      } catch (error) {
+        console.error('Failed to save favorite', error);
+      }
+    }
+  };
+
+  const handleRemoveFavorite = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteFavoriteMeal(id, currentUser!.uid);
+      setFavorites(favorites.filter(f => f.id !== id));
+    } catch (error) {
+      console.error('Failed to remove favorite', error);
+    }
+  };
+
+  const handleLoadFavorite = (fav: FavoriteMeal) => {
+    setTextInput(fav.name);
+    setMealCategory(fav.category);
+    setImagePreview(null);
+    
+    const newNutId = `nut-${Date.now()}`;
+    const newGutId = `gut-${Date.now()}`;
+    const nowISO = new Date().toISOString();
+    
+    const newResult: FoodAnalysisResponse = {
+      ...fav.result,
+      nutrition: { 
+        ...fav.result.nutrition, 
+        id: newNutId, 
+        timestamp: nowISO 
+      },
+      gutHealth: { 
+        ...fav.result.gutHealth, 
+        id: newGutId, 
+        mealReferenceId: newNutId, 
+        timestamp: nowISO 
+      },
+    };
+    
+    setAnalysisResult(newResult);
+    setIsSaved(false);
+    setIsManuallyEdited(false);
+  };
 
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [showMobileOptions, setShowMobileOptions] = useState(false);
@@ -323,14 +405,23 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
             </div>
           </div>
 
-          <button
-            id="analyzer-grounding-rules-btn"
-            onClick={onOpenNotebookModal}
-            className="self-start sm:self-auto text-xs text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 rounded-lg font-medium flex items-center transition-colors shrink-0"
-          >
-            <Sparkles className="w-3.5 h-3.5 mr-1.5 text-zinc-500 dark:text-zinc-400" />
-            Grounding Rules
-          </button>
+          <div className="flex items-center space-x-3 self-start sm:self-auto shrink-0">
+            <button
+              onClick={() => setShowFavoritesModal(true)}
+              title="Saved Favorites"
+              className="text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800 hover:text-amber-500 dark:hover:text-amber-400 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 p-1.5 rounded-lg flex items-center justify-center transition-colors"
+            >
+              <Star className="w-4 h-4" />
+            </button>
+            <button
+              id="analyzer-grounding-rules-btn"
+              onClick={onOpenNotebookModal}
+              className="text-xs text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 rounded-lg font-medium flex items-center transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5 mr-1.5 text-zinc-500 dark:text-zinc-400" />
+              Grounding Rules
+            </button>
+          </div>
         </div>
       </div>
 
@@ -439,6 +530,7 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
                   ))}
                 </div>
               </div>
+              
               <textarea
                 id="meal-description-textarea"
                 value={textInput}
@@ -537,6 +629,15 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
                   <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
                     {analysisResult.nutrition.meal}
                   </h3>
+                  {!favorites.some(f => f.name === analysisResult.nutrition.meal) && (
+                    <button
+                      onClick={handleSaveFavorite}
+                      title="Save to favorites for quick logging later"
+                      className="inline-flex items-center p-1.5 rounded-md bg-white dark:bg-zinc-800/50 text-zinc-400 hover:text-amber-500 hover:bg-zinc-50 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 transition-colors"
+                    >
+                      <Star className="w-4 h-4" />
+                    </button>
+                  )}
                   {isManuallyEdited && (
                     <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
                       User Verified
@@ -855,6 +956,83 @@ export const MultimodalFoodAnalyzer: React.FC<MultimodalFoodAnalyzerProps> = ({
                   <div className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">Upload from Files</div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400">Choose an existing image</div>
                 </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Favorites Modal */}
+      {showFavoritesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-zinc-200/50 dark:border-zinc-800 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+              <div className="flex items-center space-x-2">
+                <Star className="w-5 h-5 text-amber-500" />
+                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Saved Favorites</h3>
+              </div>
+              <button
+                onClick={() => setShowFavoritesModal(false)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto overflow-x-hidden" style={{ minHeight: '200px' }}>
+              {favorites.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-48 text-center px-4">
+                  <div className="w-12 h-12 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-3">
+                    <Star className="w-6 h-6 text-amber-300 dark:text-amber-700" />
+                  </div>
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-200">No favorites yet</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-[250px]">
+                    Analyze a meal, then click "Save Favorite" on the result card to quickly log it later without waiting on the AI.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {favorites.map((fav) => (
+                    <div 
+                      key={fav.id}
+                      className="group relative flex flex-col p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-amber-300 dark:hover:border-amber-700/50 hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => {
+                        handleLoadFavorite(fav);
+                        setShowFavoritesModal(false);
+                      }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center space-x-2 mb-1">
+                            <h4 className="font-bold text-zinc-900 dark:text-zinc-100 text-sm leading-tight">{fav.name}</h4>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                              {fav.category}
+                            </span>
+                          </div>
+                          <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-1">
+                            {fav.result.nutrition.calories} kcal • {fav.result.nutrition.protein}g protein • {fav.result.nutrition.carbs}g carbs
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleRemoveFavorite(fav.id, e)}
+                          className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all shrink-0 ml-2"
+                          title="Remove favorite"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 flex justify-end">
+              <button
+                onClick={() => setShowFavoritesModal(false)}
+                className="px-4 py-2 text-sm font-semibold text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>

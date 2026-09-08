@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center space-x-2">
                 <h1 className="text-base font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
-                  TrackMyPlate
+                  Track My Bite
                 </h1>
               </div>
               <p className="text-[11px] text-zinc-500 dark:text-zinc-400 hidden md:block">

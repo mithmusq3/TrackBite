@@ -30,5 +30,11 @@ service cloud.firestore {
       allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
     }
+
+    // Favorite Meals - strictly readable and writable only by the authenticated owner
+    match /favorite_meals/{favoriteId} {
+      allow read, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    }
   }
 }

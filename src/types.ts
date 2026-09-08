@@ -52,6 +52,15 @@ export interface FoodAnalysisResponse {
   analysisSummary: string;
 }
 
+export interface FavoriteMeal {
+  id: string;
+  userId?: string;
+  name: string;
+  category: 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
+  result: FoodAnalysisResponse;
+  createdAt?: string;
+}
+
 export interface UserProfile {
   id: string;
   displayName: string;

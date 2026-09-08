@@ -1,5 +1,5 @@
 {
-  "name": "TrackMyPlate",
+  "name": "Track My Bite",
   "description": "Multimodal food nutrition analyzer, live multi-user cloud database & Supabase PostgreSQL logger, interactive range diagnostics, and clinical gut health risk engine.",
   "requestFramePermissions": [
     "camera"
