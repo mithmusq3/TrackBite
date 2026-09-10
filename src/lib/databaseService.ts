@@ -369,20 +369,26 @@ export async function deleteMealFromDatabase(id: string, userId: string): Promis
 }
 
 export async function getFavoriteMeals(userId: string): Promise<any[]> {
+  try {
+    const response = await fetch(`/api/favorites?userId=${encodeURIComponent(userId)}`);
+    if (response.ok) {
+      const data = await response.json();
+      return data.favorites || [];
+    }
+  } catch (apiErr) {
+    console.warn('API /api/favorites fetch failed, attempting direct Supabase query:', apiErr);
+  }
   const sb = getDirectSupabase();
   if (!sb) return [];
-  
   const { data, error } = await sb
     .from('favorite_meals')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
-    
   if (error) {
     console.error('Failed to fetch favorite meals:', error);
     return [];
   }
-  
   return (data || []).map(row => ({
     id: row.id,
     userId: row.user_id,
@@ -394,9 +400,18 @@ export async function getFavoriteMeals(userId: string): Promise<any[]> {
 }
 
 export async function saveFavoriteMeal(favorite: any): Promise<void> {
+  try {
+    const res = await fetch('/api/favorites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ favorite, userId: favorite.userId }),
+    });
+    if (res.ok) return;
+  } catch (err) {
+    console.warn('POST /api/favorites failed, falling back to direct Supabase write:', err);
+  }
   const sb = getDirectSupabase();
   if (!sb) throw new Error('Could not connect to database.');
-  
   const { error } = await sb.from('favorite_meals').insert({
     id: favorite.id,
     user_id: favorite.userId,
@@ -405,63 +420,66 @@ export async function saveFavoriteMeal(favorite: any): Promise<void> {
     result: favorite.result,
     created_at: favorite.createdAt || new Date().toISOString()
   });
-  
   if (error) throw error;
 }
 
 export async function deleteFavoriteMeal(id: string, userId: string): Promise<void> {
+  try {
+    const res = await fetch(`/api/favorites/${id}?userId=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+    if (res.ok) return;
+  } catch (err) {
+    console.warn('DELETE /api/favorites failed, falling back to direct Supabase deletion:', err);
+  }
   const sb = getDirectSupabase();
   if (!sb) throw new Error('Could not connect to database.');
-  
   const { error } = await sb.from('favorite_meals').delete().eq('id', id).eq('user_id', userId);
   if (error) throw error;
 }
 
-export async function getUserPreferences(userId: string): Promise<{
-  rules: any[] | null;
-  context: any | null;
-}> {
+export async function getUserPreferences(userId: string): Promise<{ rules: any[] | null; context: any | null; }> {
+  try {
+    const response = await fetch(`/api/preferences?userId=${encodeURIComponent(userId)}`);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch (apiErr) {
+    console.warn('API /api/preferences fetch failed, attempting direct Supabase query:', apiErr);
+  }
   const sb = getDirectSupabase();
   if (!sb) return { rules: null, context: null };
-  
-  const { data, error } = await sb
-    .from('user_preferences')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-    
-  if (error) {
-    if (error.code !== 'PGRST116') { // PGRST116 means no rows found, which is fine
-      console.error('Failed to fetch user preferences:', error);
-    }
-    return { rules: null, context: null };
+  const { data, error } = await sb.from('user_preferences').select('*').eq('user_id', userId).single();
+  if (error && error.code !== 'PGRST116') {
+    console.error('Failed to fetch user preferences:', error);
   }
-  
   return {
     rules: data?.grounding_rules || null,
     context: data?.tolerance_context || null,
   };
 }
 
-export async function saveUserPreferences(
-  userId: string,
-  rules: any[],
-  context: any
-): Promise<void> {
+
+export async function saveUserPreferences(userId: string, rules: any[], context: any): Promise<void> {
+  try {
+    const res = await fetch('/api/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, rules, context }),
+    });
+    if (res.ok) return;
+  } catch (err) {
+    console.warn('POST /api/preferences failed, falling back to direct Supabase write:', err);
+  }
   const sb = getDirectSupabase();
   if (!sb) throw new Error('Could not connect to database.');
-  
-  const { error } = await sb
-    .from('user_preferences')
-    .upsert({
-      user_id: userId,
-      grounding_rules: rules,
-      tolerance_context: context,
-      updated_at: new Date().toISOString()
-    }, {
-      onConflict: 'user_id'
-    });
-    
+  const { error } = await sb.from('user_preferences').upsert({
+    user_id: userId,
+    grounding_rules: rules,
+    tolerance_context: context,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id' });
   if (error) throw error;
 }
+
 

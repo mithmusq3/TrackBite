@@ -331,6 +331,115 @@ router.delete('/logs/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/favorites', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
+  const userId = req.query.userId as string | undefined;
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  try {
+    const { data, error } = await sb
+      .from('favorite_meals')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    const formatFavorite = (row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      category: row.category,
+      result: row.result,
+      createdAt: row.created_at
+    });
+    return res.json({ favorites: (data || []).map(formatFavorite) });
+  } catch (err: any) {
+    console.error('Error fetching favorite meals:', err);
+    return res.status(500).json({ error: 'Failed to fetch favorite meals' });
+  }
+});
+
+router.post('/favorites', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
+  const { favorite, userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  try {
+    const { error } = await sb.from('favorite_meals').insert({
+      id: favorite.id,
+      user_id: favorite.userId,
+      name: favorite.name,
+      category: favorite.category,
+      result: favorite.result,
+      created_at: favorite.createdAt || new Date().toISOString()
+    });
+    if (error) throw error;
+    return res.status(201).json({ success: true, message: 'Favorite meal saved' });
+  } catch (err: any) {
+    console.error('Error saving favorite meal:', err);
+    return res.status(500).json({ error: 'Failed to save favorite meal' });
+  }
+});
+
+router.get('/preferences', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
+  const userId = req.query.userId as string | undefined;
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  try {
+    const { data, error } = await sb
+      .from('user_preferences')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return res.json({
+      rules: data?.grounding_rules || null,
+      context: data?.tolerance_context || null
+    });
+  } catch (err: any) {
+    console.error('Error fetching preferences:', err);
+    return res.status(500).json({ error: 'Failed to fetch preferences' });
+  }
+});
+
+router.post('/preferences', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
+  const { userId, rules, context } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  try {
+    const { error } = await sb
+      .from('user_preferences')
+      .upsert({
+        user_id: userId,
+        grounding_rules: rules,
+        tolerance_context: context,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' });
+    if (error) throw error;
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error saving preferences:', err);
+    return res.status(500).json({ error: 'Failed to save preferences' });
+  }
+});
+
+router.delete('/favorites/:id', async (req: Request, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
+  const { id } = req.params;
+  const userId = req.query.userId as string | undefined;
+  if (!userId) return res.status(400).json({ error: 'userId is required' });
+  try {
+    const { error } = await sb.from('favorite_meals').delete().eq('id', id).eq('user_id', userId);
+    if (error) throw error;
+    return res.json({ success: true, message: 'Favorite deleted' });
+  } catch (err: any) {
+    console.error('Error deleting favorite:', err);
+    return res.status(500).json({ error: 'Failed to delete favorite' });
+  }
+});
+
 router.get('/symptoms', async (req: Request, res: Response) => {
   const sb = getSupabase();
   if (!sb) return res.status(503).json({ error: 'Supabase backend not configured.' });
